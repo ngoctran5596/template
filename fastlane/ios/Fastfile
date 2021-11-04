@@ -1,0 +1,95 @@
+XCODEPROJ_PATH="./ios/MyApp.xcodeproj"
+INFO_PLIST_PATH="../ios/MyApp/Info.plist"
+WORKSPACE_PATH="ios/MyApp.xcworkspace"
+OUTPUT_DIR="./ios/build"
+
+platform :ios do
+    desc "Deploy Ios app"
+    lane :deploy do
+        # Choose environment & update app build code
+        choose_environments(platform: "ios")
+        # Update app icon
+        if UI.confirm("Do you want to update app icon?") then update_icon end
+        is_upload_appcenter = UI.confirm("Do you want to upload file to appcenter?")
+        # Update app info by env file
+        update_app_info
+        #Export IPA
+        build
+        #Upload file to appcenter
+        if is_upload_appcenter then upload_appcenter end
+    end
+
+    desc "Update App Info"
+    private_lane :update_app_info do
+      # Import certificate *.p12 & mobileprovision
+      provision_path = "ios/provisions/#{ENV['PROVISION_FILENAME']}.mobileprovision"
+      certificates_path = File.expand_path("ios/provisions/Certificates.p12")
+      if (File.exist?(certificates_path) && ENV.has_key?('CERT_PASSWORD') && !ENV["CERT_PASSWORD"].empty?)
+        import_certificate(
+          certificate_path: "fastlane/ios/provisions/Certificates.p12",
+          certificate_password: ENV['CERT_PASSWORD'],
+          keychain_name: "login.keychain"
+        )
+        install_provisioning_profile(path: provision_path)
+      end
+      if File.exist?(File.expand_path(provision_path))
+        #Update Provisioning Profile
+        update_project_provisioning(
+            xcodeproj: XCODEPROJ_PATH,
+            profile: "fastlane/#{provision_path}",
+            code_signing_identity: ENV['CODE_SIGNING_IDENTITY'],
+            build_configuration: "Release"
+        )
+        #Update team id
+        update_project_team(
+            path: XCODEPROJ_PATH,
+            teamid: ENV['TEAM_ID']
+        )
+        #Update app id
+        update_app_identifier(
+            xcodeproj: XCODEPROJ_PATH,
+            plist_path: INFO_PLIST_PATH,
+            app_identifier: "#{ENV["APP_ID_IOS"]}"
+        )
+      else
+        UI.user_error!("mobileprovision file doesn't exist.")
+      end
+    end
+
+    desc "Update App Icon"
+    private_lane :update_icon do
+        icon_path = "./fastlane/icons/#{ENV["NODE_ENV"].downcase}.png"
+        appicon(
+            appicon_image_file: icon_path,
+            appicon_devices: [:ipad, :iphone, :ios_marketing],
+            appicon_path: "ios/MyApp/Images.xcassets",
+            remove_alpha: true
+        )
+    end
+
+    desc "Upload Appcenter"
+    private_lane :upload_appcenter do
+        appcenter_upload(
+        api_token: ENV['APP_CENTER_TOKEN'],
+        owner_name: ENV['OWNER_NAME'],
+        app_name: ENV['APP_NAME_IOS'],
+        ipa: "./ios/build/MyApp-#{ENV['BUILD_TYPE_RELEASE']}.ipa",
+        destinations: ENV['DISTRIBUTION_GROUPS'],
+        destination_type: 'group'
+        )
+    end
+
+    desc "Export Ipa file"
+    private_lane :build do
+      gym(
+        scheme: ENV['SCHEME'],
+        workspace: WORKSPACE_PATH,
+        configuration: 'Release',
+        output_directory: OUTPUT_DIR,
+        output_name: "#{ENV['APP_NAME']}-#{ENV['NODE_ENV']}.ipa",
+        export_method: ENV['EXPORT_METHOD'],
+        clean: true,
+        silent: true,
+      )
+    end
+end

@@ -1,0 +1,42 @@
+fastlane_require 'dotenv'
+import './ios/Fastfile'
+import './android/Fastfile'
+
+desc 'Choose environments'
+private_lane :choose_environments do |options|
+  platform = "ANDROID"
+  if options[:'platform'] == "ios" then platform = "IOS" end
+  environment_selected = UI.select("Select enviroment to build: ", ["Development", "Staging", "Production"])
+  default_env = "../configs/development/.env".gsub! 'development', environment_selected.downcase
+  if File.exist?(default_env)
+    #Load & update env file
+    env_path = File.expand_path(default_env)
+    Dotenv.overload env_path
+    if UI.confirm("Do you want to update app build code?") then update_build_code(app_name: ENV["APP_NAME_#{platform.upcase}"], env_path: env_path) end
+    Dotenv.overload env_path
+  else
+      UI.user_error!(".env file doesn't exist.")
+  end
+end
+
+
+desc 'Fetch & update app build code from app center'
+private_lane :update_build_code do |options|
+  current_date = Time.now.strftime("%Y%m%d")
+  app_build_code = "#{current_date}1"
+  version = appcenter_fetch_version_number(
+    api_token: ENV['APP_CENTER_TOKEN'],
+    owner_name: ENV['OWNER_NAME'],
+    app_name: options[:'app_name'],
+    # version: "" # optional, don't set this value to get the last upload of all versions
+  )
+  build_number = version['build_number']
+  build_date = build_number.slice(0..build_number.length-2)
+  num_of_build = build_number[-1,1]
+  if build_date == current_date then
+    app_build_code = "#{current_date}#{num_of_build.to_i + 1}"
+  end
+  cur_env_content = File.read(options[:'env_path'])
+  new_env_content = cur_env_content.gsub!(/APP_BUILD_CODE\=[^\n]*/, "APP_BUILD_CODE=#{app_build_code}")
+  File.open(options[:'env_path'], "w") {|file| file.puts new_env_content }
+end

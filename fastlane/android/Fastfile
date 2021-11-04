@@ -1,0 +1,41 @@
+platform :android do
+    desc 'Deploy Android App'
+    lane :deploy do
+      # Choose environment & update app build code
+      choose_environments(platform: "android")
+      # Update app icon
+      if UI.confirm("Do you want to update app icon?") then update_icon end
+      is_upload_appcenter = UI.confirm("Do you want to upload file to appcenter?")
+      #Clean & export apk
+      build_task = "assemble"
+      if ENV['BUILD_TYPE_RELEASE'] == "Production" then build_task = "bundle" end
+      gradle(task: 'clean', project_dir: 'android/')
+      gradle(task: build_task, build_type: "#{ENV['BUILD_TYPE_RELEASE']}Release", project_dir: 'android/')
+      #Upload file to appcenter
+      if is_upload_appcenter then upload_appcenter end
+    end
+  
+    desc 'Update App Icon'
+    private_lane :update_icon do
+      icon_path = "./fastlane/icons/#{ENV["NODE_ENV"].downcase}.png"
+      android_appicon(
+        appicon_image_file: icon_path,
+        appicon_icon_types: [:launcher],
+        appicon_path: 'android/app/src/main/res/mipmap',
+        generate_rounded: true,
+      )
+    end
+  
+    desc 'Upload Appcenter'
+    private_lane :upload_appcenter do
+      build_type_lowercase = ENV['BUILD_TYPE_RELEASE'].downcase
+      appcenter_upload(
+        api_token: ENV['APP_CENTER_TOKEN'],
+        owner_name: ENV['OWNER_NAME'],
+        app_name: ENV['APP_NAME_ANDROID'],
+        apk: "./android/app/build/outputs/apk/#{build_type_lowercase}Release/#{ENV['APP_NAME']}-#{ENV['NODE_ENV']}.apk",
+        destinations: ENV['DISTRIBUTION_GROUPS'],
+        destination_type: 'group'
+      )
+    end
+  end
